@@ -29,8 +29,6 @@ ALLOWED_HOSTS = []
 
 AUTH_USER_MODEL = "base.Account"
 
-# Application definition
-
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
