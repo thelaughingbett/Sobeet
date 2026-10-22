@@ -132,6 +132,8 @@ These apply to both `POST /appointments` and `PATCH /appointments/{id}/reschedul
 | `APT008` | 422  | Clinic is closed on this date                | The date is a clinic holiday.                                                                                                                                 |
 | `APT009` | 422  | Doctor is on time off                        | The slot overlaps one of the doctor's time-off records.                                                                                                       |
 | `APT010` | 400  | Invalid or missing start time                | `start_at` is absent or not a valid timestamp.                                                                                                                |
+| `APT015` | 409  | You already hold this slot                   | The patient already holds a `booked` appointment with this doctor in the slot. Returned instead of `APT002`, which is for a slot held by someone else.        |
+| `APT016` | 409  | You have another appointment at this time    | The patient already has a `booked` appointment with a different doctor that overlaps the slot. A patient cannot be in two places at once.                     |
 
 ### Appointments: cancel and reschedule
 
@@ -152,6 +154,7 @@ Booking and reschedule validation runs in a fixed order, so a request that break
 4. Slot boundary (`APT005`)
 5. Past (`APT003`), then minimum lead time (`APT004`)
 6. Working hours, lunch, holiday, time off (`APT006`, `APT007`, `APT008`, `APT009`)
-7. Slot already taken (`APT002`)
+7. Slot already taken (`APT002`), or already held by this patient (`APT015`)
+8. Patient has an overlapping appointment with another doctor (`APT016`)
 
 For reschedule, `APT001`, `APT011`, `APT012`, and `APT014` are checked first, before the steps above.
