@@ -1,0 +1,684 @@
+openapi: 3.0.3
+info:
+  title: Clinic Appointment Booking API
+  version: 1.0.0
+  description: Book, cancel and reschedule clinic appointments. Error codes are listed
+    in docs/ERROR_CODES.md.
+paths:
+  /appointments:
+    post:
+      operationId: appointments_create
+      description: Books one slot with a doctor. The slot must be on the slot grid,
+        inside working hours, outside lunch, not a clinic holiday, not in time off,
+        at least the minimum lead time ahead, and not already taken.
+      summary: Book an appointment
+      tags:
+      - Appointments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'GEN001, GEN004, APT010: malformed or missing input'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'DOC001, PAT001: doctor or patient not found'
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'APT002: the slot is already taken'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'DOC002, APT003 to APT009: a booking rule is broken (doctor
+            not bookable, past, too soon, off the grid, outside hours, lunch, holiday,
+            time off)'
+  /appointments/{appointment_id}/cancel:
+    patch:
+      operationId: appointments_cancel_partial_update
+      description: Cancels a booked appointment and records the reason. The slot becomes
+        bookable again.
+      summary: Cancel an appointment
+      parameters:
+      - in: path
+        name: appointment_id
+        schema:
+          type: string
+          format: uuid
+        description: The appointment to cancel.
+        required: true
+      tags:
+      - Appointments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCancelRequest'
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'GEN001, GEN004, APT013: malformed body or missing reason'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'APT001: appointment not found'
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'APT011, APT012: already cancelled, or not in a booked state'
+  /appointments/{appointment_id}/reschedule:
+    patch:
+      operationId: appointments_reschedule_partial_update
+      description: Moves a booked appointment to a new slot with the same doctor.
+        The new slot is validated like a fresh booking. The old appointment becomes
+        `rescheduled` and frees its slot. The response is the new appointment, whose
+        `rescheduled_from_id` points back to the old one.
+      summary: Reschedule an appointment
+      parameters:
+      - in: path
+        name: appointment_id
+        schema:
+          type: string
+          format: uuid
+        description: The appointment to move.
+        required: true
+      tags:
+      - Appointments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedRescheduleRequest'
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'GEN001, APT010: malformed body or invalid start_at'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'APT001: appointment not found'
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'APT002, APT011, APT012: new slot taken, or the appointment
+            is cancelled or not in a booked state'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'DOC002, APT003 to APT009, APT014: the new slot breaks a booking
+            rule, or is the same as the current slot'
+  /doctors:
+    get:
+      operationId: doctors_list
+      description: Lists doctors, optionally filtered by clinic and status.
+      summary: List doctors
+      parameters:
+      - in: query
+        name: clinic_id
+        schema:
+          type: string
+        description: Only doctors that belong to this clinic.
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - active
+          - adjunct
+          - inactive
+        description: Only doctors with this status.
+      tags:
+      - Doctors
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Doctor'
+          description: ''
+    post:
+      operationId: doctors_create
+      description: Creates the doctor's account and profile, and optionally their
+        working hours (one block per weekday, Sunday = 1 to Saturday = 7).
+      summary: Create a doctor
+      tags:
+      - Doctors
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DoctorCreateRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Doctor'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'GEN001, GEN004: malformed or missing input'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'CLN001: clinic not found'
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'USR002: email already registered'
+  /doctors/{doctor_id}/availability:
+    get:
+      operationId: doctors_availability_retrieve
+      description: Returns every free slot for the doctor on the given clinic-local
+        date, in time order. Lunch, holidays, time off, booked slots and slots inside
+        the minimum lead time are excluded. Timestamps carry the clinic's UTC offset
+        and can be sent straight back when booking.
+      summary: Free slots for a doctor on a date
+      parameters:
+      - in: query
+        name: date
+        schema:
+          type: string
+        description: Clinic-local date, YYYY-MM-DD.
+        required: true
+      - in: path
+        name: doctor_id
+        schema:
+          type: string
+          format: uuid
+        description: The doctor to check.
+        required: true
+      tags:
+      - Doctors
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Availability'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'AVL001: missing or invalid date'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'DOC001: doctor not found'
+  /patients:
+    get:
+      operationId: patients_list
+      description: Lists all patients.
+      summary: List patients
+      tags:
+      - Patients
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Patient'
+          description: ''
+    post:
+      operationId: patients_create
+      description: Creates the patient's account and profile.
+      summary: Create a patient
+      tags:
+      - Patients
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientCreateRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Patient'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'GEN001, GEN004: malformed or missing input'
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'USR002: email already registered'
+  /patients/{patient_id}/appointments:
+    get:
+      operationId: patients_appointments_list
+      description: Lists the patient's upcoming `booked` appointments, soonest first.
+        Cancelled, rescheduled and past appointments are not included.
+      summary: A patient's upcoming appointments
+      parameters:
+      - in: path
+        name: patient_id
+        schema:
+          type: string
+          format: uuid
+        description: The patient whose appointments to list.
+        required: true
+      tags:
+      - Patients
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Appointment'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: 'PAT001: patient not found'
+components:
+  schemas:
+    Appointment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        patient_id:
+          type: string
+          format: uuid
+          readOnly: true
+        doctor_id:
+          type: string
+          format: uuid
+          readOnly: true
+        doctor_name:
+          type: string
+          readOnly: true
+        start_at:
+          type: string
+          format: date-time
+          readOnly: true
+        end_at:
+          type: string
+          format: date-time
+          readOnly: true
+        state:
+          type: string
+          readOnly: true
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+        cancel_reason:
+          type: string
+          readOnly: true
+        rescheduled_from_id:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+      required:
+      - cancel_reason
+      - cancelled_at
+      - doctor_id
+      - doctor_name
+      - end_at
+      - id
+      - patient_id
+      - rescheduled_from_id
+      - start_at
+      - state
+    Availability:
+      type: object
+      properties:
+        doctor_id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        timezone:
+          type: string
+          description: The clinic's IANA timezone name.
+        slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/Slot'
+      required:
+      - date
+      - doctor_id
+      - slots
+      - timezone
+    BookingRequest:
+      type: object
+      properties:
+        patient_id:
+          type: string
+          format: uuid
+        doctor_id:
+          type: string
+          format: uuid
+        start_at:
+          type: string
+          format: date-time
+          description: ISO 8601 with a UTC offset, e.g. 2026-11-03T10:00:00+03:00
+      required:
+      - doctor_id
+      - patient_id
+      - start_at
+    Doctor:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        full_name:
+          type: string
+          readOnly: true
+        phone_no:
+          type: string
+          readOnly: true
+        clinic_id:
+          type: string
+          readOnly: true
+        title:
+          type: string
+          maxLength: 50
+        speciality:
+          type: string
+          maxLength: 150
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        working_hours:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkingHours'
+          readOnly: true
+      required:
+      - clinic_id
+      - email
+      - full_name
+      - id
+      - phone_no
+      - working_hours
+    DoctorCreateRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        clinic_id:
+          type: string
+          format: uuid
+        phone_no:
+          type: string
+        title:
+          type: string
+        speciality:
+          type: string
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusEnum'
+          default: active
+        working_hours:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkingHours'
+      required:
+      - clinic_id
+      - email
+      - full_name
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: 'Display text ending in (Ref: CODE).'
+        code:
+          type: string
+          description: Stable error code, e.g. APT002.
+        message:
+          type: string
+          description: Short, fixed description of the error.
+        detail:
+          type: string
+          description: Specific explanation for this occurrence.
+      required:
+      - code
+      - detail
+      - error
+      - message
+    PatchedCancelRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          description: Why the appointment is being cancelled.
+    PatchedRescheduleRequest:
+      type: object
+      properties:
+        start_at:
+          type: string
+          format: date-time
+          description: The new slot, ISO 8601 with a UTC offset.
+    Patient:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        full_name:
+          type: string
+          readOnly: true
+        phone_no:
+          type: string
+          readOnly: true
+      required:
+      - email
+      - full_name
+      - id
+      - phone_no
+    PatientCreateRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        phone_no:
+          type: string
+      required:
+      - email
+      - full_name
+    Slot:
+      type: object
+      properties:
+        start_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+      required:
+      - end_at
+      - start_at
+    StatusEnum:
+      enum:
+      - inactive
+      - active
+      - adjunct
+      type: string
+      description: |-
+        * `inactive` - Inactive
+        * `active` - Active
+        * `adjunct` - Adjunct
+    WeekdayEnum:
+      enum:
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 7
+      type: integer
+      description: |-
+        * `1` - Sunday
+        * `2` - Monday
+        * `3` - Tuesday
+        * `4` - Wednesday
+        * `5` - Thursday
+        * `6` - Friday
+        * `7` - Saturday
+    WorkingHours:
+      type: object
+      properties:
+        weekday:
+          allOf:
+          - $ref: '#/components/schemas/WeekdayEnum'
+          minimum: 0
+          maximum: 9223372036854775807
+        start_time:
+          type: string
+          format: time
+        end_time:
+          type: string
+          format: time
+      required:
+      - end_time
+      - start_time
+      - weekday
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
+servers:
+- url: https://sobeet.onrender.com
+  description: Production
+- url: http://localhost:8000
+  description: Local

@@ -1,17 +1,37 @@
-from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
+from rest_framework.response import Response
 
 from base.services import list_upcoming_appointments, list_patients, create_patient
 from base.utils.errors import GEN004
 
-from api.serializers import AppointmentSerializer, PatientSerializer
+from api.serializers import (
+    AppointmentSerializer,
+    PatientCreateRequestSerializer,
+    PatientSerializer,
+)
 
 from .common import ClinicAPIView, require_fields, json_object
+from .openapi import error_response, path_uuid
 
 
 class PatientAppointmentsView(ClinicAPIView):
     """GET /patients/{id}/appointments: upcoming booked appointments, soonest first."""
 
+    @extend_schema(
+        tags=["Patients"],
+        summary="A patient's upcoming appointments",
+        description=(
+            "Lists the patient's upcoming `booked` appointments, soonest first. "
+            "Cancelled, rescheduled and past appointments are not included."
+        ),
+        parameters=[
+            path_uuid("patient_id", "The patient whose appointments to list.")],
+        responses={
+            200: AppointmentSerializer(many=True),
+            404: error_response("PAT001: patient not found"),
+        },
+    )
     def get(self, request, patient_id):
         # PAT001 is raised here if the patient does not exist.
         appointments = list_upcoming_appointments(patient_id=patient_id)
@@ -23,9 +43,26 @@ class PatientAppointmentsView(ClinicAPIView):
 class PatientsView(ClinicAPIView):
     """GET /patients, POST /patients  { email, full_name, phone_no? }"""
 
+    @extend_schema(
+        tags=["Patients"],
+        summary="List patients",
+        description="Lists all patients.",
+        responses={200: PatientSerializer(many=True)},
+    )
     def get(self, request):
         return Response(PatientSerializer(list_patients(), many=True).data)
 
+    @extend_schema(
+        tags=["Patients"],
+        summary="Create a patient",
+        description="Creates the patient's account and profile.",
+        request=PatientCreateRequestSerializer,
+        responses={
+            201: PatientSerializer,
+            400: error_response("GEN001, GEN004: malformed or missing input"),
+            409: error_response("USR002: email already registered"),
+        },
+    )
     def post(self, request):
         data = json_object(request)
         require_fields(data, "email", "full_name")

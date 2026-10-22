@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     'rest_framework',
+    'drf_spectacular',
 
     'base.apps.BaseConfig',
     'api.apps.ApiConfig'
@@ -136,4 +137,20 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
+
+REST_FRAMEWORK = {
+
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Clinic Appointment Booking API",
+    "DESCRIPTION": "Book, cancel and reschedule clinic appointments. Error codes are listed in docs/ERROR_CODES.md.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SERVERS": [
+        {"url": "https://sobeet.onrender.com", "description": "Production"},
+        {"url": "http://localhost:8000", "description": "Local"},
+    ],
 }
