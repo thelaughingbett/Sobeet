@@ -1,5 +1,12 @@
 # Clinic Appointment Booking: System Design
 
+> **Quick links**
+>
+> - Public URL: [https://sobeet.onrender.com](https://sobeet.onrender.com)
+> - Postman collection: [Clinic Appointment Booking System](https://www.postman.com/security-meteorologist-10250542-s-team/workspace/clinic-appointment-booking-system)
+> - Database schema: [docs/er-diagram.md](docs/er-diagram.md)
+> - Error codes: [docs/ERROR_CODES.md](docs/ERROR_CODES.md)
+
 ## 1. Problem
 
 A small clinic with 5 doctors needs online appointment booking.
@@ -34,7 +41,7 @@ A small clinic with 5 doctors needs online appointment booking.
 
 [🗃️ Database Schema](docs/er-diagram.md)
 
-`## 4. Components
+## 4. Components
 
 ```
 Web frontend --> API layer --> Auth/Accounts
@@ -186,3 +193,30 @@ Business failures are raised as `ClinicError` subclasses defined in `core/errors
 - **Business rules to confirm:** how far ahead patients may book, a cancellation cutoff (for example 2 hours before), and whether a patient may hold overlapping appointments with different doctors.
 - **Chart.** Medical records need their own access rules and audit logging before they are built.
 - **Growth path:** multi-branch support (already scoped by `Clinic`), caching or read replicas for Availability, notifications, appointment types, and clinic-wide closures (for example, a nullable `doctor_id` on `TimeOff` meaning "everyone").
+
+## 9. Deployment and CI/CD
+
+| Item                  | Details                                                         |
+| --------------------- | --------------------------------------------------------------- |
+| **Public URL**        | https://sobeet.onrender.com                                     |
+| **Deployment branch** | prod                                                            |
+| **Hosting**           | Render (web service running `gunicorn Sobeet.wsgi:application`) |
+| **Build command**     | ./build.sh                                                      |
+
+### Pipeline
+
+- **On every pull request:** GitHub Actions installs dependencies and runs the test suite. A failing test blocks the merge.
+- **On merge into the deployment branch:** the pipeline re-runs the tests and, if they pass, triggers a deploy to Render (via Render's auto-deploy or a deploy hook).
+
+## 10. API collection (Postman)
+
+All endpoints are documented and runnable in the Postman workspace:
+
+**[Clinic Appointment Booking System (Postman)](https://www.postman.com/security-meteorologist-10250542-s-team/workspace/clinic-appointment-booking-system)**
+
+To use it:
+
+1. Open the workspace and fork the collection, or import it into your own Postman.
+2. Set the `base_url` variable to the deployed URL (or `http://localhost:8000` for local runs).
+3. Run the list request first. A post-response script picks a random `booked` appointment and stores its ID in the `APPOINTMENT_ID` variable, which the cancel and reschedule requests then use.
+4. In Postman, use the **Desktop Agent** when testing against localhost.
