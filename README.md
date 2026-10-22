@@ -3,9 +3,11 @@
 > **Quick links**
 >
 > - Public URL: [https://sobeet.onrender.com](https://sobeet.onrender.com)
+> - API docs (Swagger UI): [https://sobeet.onrender.com/docs](https://sobeet.onrender.com/docs)
 > - Postman collection: [Clinic Appointment Booking System](https://www.postman.com/security-meteorologist-10250542-s-team/workspace/clinic-appointment-booking-system)
 > - Database schema: [docs/er-diagram.md](docs/er-diagram.md)
 > - Error codes: [docs/ERROR_CODES.md](docs/ERROR_CODES.md)
+> - AI reflection: [docs/AI_REFLECTION.md](docs/AI_REFLECTION.md)
 
 ## 1. Problem
 
@@ -87,7 +89,7 @@ Checked in this order, so the first failure gives a specific message:
 5. `start_at` is not in the past.
 6. `start_at` is at least 61 minutes from now (`MIN_LEAD_MINUTES = 61`, configurable).
 7. The slot is inside the doctor's working hours for that weekday, outside lunch, not on a clinic holiday, and not inside time off.
-8. The slot is not already taken. This is guaranteed by the database constraint, so a race returns 409 instead of double booking.
+8. The slot is not already taken (`APT002`), the patient does not already hold it (`APT015`), and the patient has no other booked appointment at the same time (`APT016`). The slot itself is guaranteed by the database constraint, so a race returns 409 instead of double booking.
 
 For reschedule there are two extra checks before the above: the appointment must be in state `booked`, and the new `start_at` must differ from the current one. The whole operation runs in one transaction: mark the old row `rescheduled`, then insert the new `booked` row. If the new slot fails any check, the transaction rolls back and the original stays `booked`.
 
@@ -124,6 +126,8 @@ Checking "is it free?" and then inserting in application code has a race conditi
 
 The `WHERE state = 'booked'` clause matters. `cancelled` and `rescheduled` rows stay for history and must not block someone else from taking the slot. On a violation, the API returns "that slot was just taken".
 
+The current implementation uses the minimum option, because it works on both SQLite (local development) and Postgres. The exclusion constraint is the planned upgrade once appointment lengths vary.
+
 ### 6.3 Time off auto-reschedules affected appointments
 
 When an admin creates a `TimeOff` and booked appointments fall inside it, the system moves them automatically instead of asking the patient. In one database transaction:
@@ -158,7 +162,7 @@ Every outcome is a state. Together with `cancelled_at` and `rescheduled_from_id`
 
 ### 6.9 Minimum lead time
 
-Bookings must be at least 60 minutes ahead. The rule lives in the availability calculation (so unbookable slots are never shown) and is checked again at booking time, since time passes between viewing and booking. The value is a setting, not a hard-coded number.
+Bookings must be at least `MIN_LEAD_MINUTES` minutes ahead (61 by default, see sections 4 and 5). The rule lives in the availability calculation (so unbookable slots are never shown) and is checked again at booking time, since time passes between viewing and booking. The value is a setting, not a hard-coded number.
 
 ### 6.10 Cancellation requires a reason
 
@@ -166,7 +170,7 @@ Bookings must be at least 60 minutes ahead. The rule lives in the availability c
 
 ### 6.11 Coded business errors
 
-Business failures are raised as `ClinicError` subclasses defined in `core/errors.py`, each with a stable code, a fixed message, and an HTTP status. Views catch `ClinicError` and return one response shape. Codes are never reused, so support and the frontend can rely on them. `CATALOG` allows a test to check that the documentation stays in sync with the code.
+Business failures are raised as `ClinicError` subclasses defined in `base/utils/errors.py`, each with a stable code, a fixed message, and an HTTP status. Views catch `ClinicError` and return one response shape. Codes are never reused, so support and the frontend can rely on them. `CATALOG` allows a test to check that the documentation stays in sync with the code.
 
 ## 7. Trade-offs considered
 
@@ -185,28 +189,42 @@ Business failures are raised as `ClinicError` subclasses defined in `core/errors
 
 - **No notifications in v1.** Auto-rescheduled patients are not told. Until notifications exist, the patient's "my appointments" screen must show the new time clearly, and admin staff should receive the list of moved and cancelled appointments when creating time off. Notifications are the first component to add.
 - **Auto-reschedule may not suit every patient.** It always picks the earliest slot with the same doctor, which may be inconvenient. A future version could offer choices or allow the patient to undo.
-- **Time off is not DB-enforced against bookings.** The exclusion constraint prevents two bookings overlapping, but nothing in the database stops a booking landing inside a time-off window. The Booking service re-checks availability inside the booking transaction. A booking made at the exact moment time off is created could still slip through, and the admin flow's reschedule pass should be treated as the safety net.
+- **Time off is not DB-enforced against bookings.** The unique constraint prevents two bookings in the same slot, but nothing in the database stops a booking landing inside a time-off window. The Booking service re-checks availability inside the booking transaction. A booking made at the exact moment time off is created could still slip through, and the admin flow's reschedule pass should be treated as the safety net.
+- **The unique constraint only catches identical start times.** Overlaps with different start times are caught by the application check, not by the database, until the exclusion constraint is adopted.
 - **Holiday added after bookings exist.** Adding a holiday hides slots but does not move existing appointments. Decide whether to block the change or apply the same auto-reschedule routine. Yearly holidays on 29 February need a rule for non-leap years.
 - **Single lunch window for everyone.** Staggered lunches would require moving lunch to per-doctor settings.
 - **Fixed slot length.** `slot_minutes` is clinic-wide. Different appointment types (for example 15 or 60 minutes) would need an `AppointmentType` model. The exclusion constraint already supports variable lengths.
 - **Cancellation details.** `cancel_reason` and `cancelled_at` are recorded. Add `cancelled_by` if you need to distinguish patient, admin, and system cancellations.
-- **Business rules to confirm:** how far ahead patients may book, a cancellation cutoff (for example 2 hours before), and whether a patient may hold overlapping appointments with different doctors.
+- **No authentication on the API yet.** Endpoints accept `patient_id` in the request body. The next step is to require login and read the patient from the authenticated account.
+- **Business rules to confirm:** how far ahead patients may book, and a cancellation cutoff (for example 2 hours before). A patient may not hold overlapping appointments (`APT016`).
 - **Chart.** Medical records need their own access rules and audit logging before they are built.
 - **Growth path:** multi-branch support (already scoped by `Clinic`), caching or read replicas for Availability, notifications, appointment types, and clinic-wide closures (for example, a nullable `doctor_id` on `TimeOff` meaning "everyone").
 
 ## 9. Deployment and CI/CD
 
-| Item                  | Details                                                         |
-| --------------------- | --------------------------------------------------------------- |
-| **Public URL**        | https://sobeet.onrender.com                                     |
-| **Deployment branch** | prod                                                            |
-| **Hosting**           | Render (web service running `gunicorn Sobeet.wsgi:application`) |
-| **Build command**     | ./build.sh                                                      |
+| Item                       | Details                                                                                                                                    |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Public URL**             | https://sobeet.onrender.com                                                                                                                |
+| **Deployment branch**      | `prod`                                                                                                                                     |
+| **What triggers a deploy** | Merging a pull request from `dev` into `prod`. Render watches `prod` and automatically builds and deploys every new commit on that branch. |
+| **Hosting**                | Render (web service running `gunicorn Sobeet.wsgi:application`)                                                                            |
+| **Build command**          | `./build.sh`                                                                                                                               |
+| **CI workflow**            | `.github/workflows/django.yml` ("Django CI")                                                                                               |
 
 ### Pipeline
 
-- **On every pull request:** GitHub Actions installs dependencies and runs the test suite. A failing test blocks the merge.
-- **On merge into the deployment branch:** the pipeline re-runs the tests and, if they pass, triggers a deploy to Render (via Render's auto-deploy or a deploy hook).
+The GitHub Actions workflow runs on every pull request into `dev` or `prod`, and again on every push to either branch. It uses Python 3.12 and does the following, in order:
+
+1. Checks out the code and installs dependencies from `requirements.txt` (with pip caching).
+2. Runs `manage.py check` to catch configuration errors.
+3. Runs `makemigrations --check --dry-run`, which fails if a model change has no committed migration.
+4. Runs the test suite with `manage.py test base api`: service tests (availability, booking, cancel, reschedule, parsing) and endpoint tests (status codes and error shape).
+5. Validates the generated OpenAPI schema with `manage.py spectacular --validate --fail-on-warn`, so an endpoint cannot be added without being annotated for the API docs.
+
+### How the gate works
+
+- A pull request from `dev` into `prod` cannot be merged until the `test` check passes, so a failing test blocks the merge. This relies on branch protection on `prod` requiring that check.
+- After the merge, Render deploys `prod`. Render's default auto-deploy starts on every push to `prod` without waiting for GitHub Actions, so the protection on `prod` is what guarantees only tested code is deployed. Render's "After CI checks pass" auto-deploy option adds a second guard.
 
 ## 10. API collection (Postman)
 
@@ -220,3 +238,17 @@ To use it:
 2. Set the `base_url` variable to the deployed URL (or `http://localhost:8000` for local runs).
 3. Run the list request first. A post-response script picks a random `booked` appointment and stores its ID in the `APPOINTMENT_ID` variable, which the cancel and reschedule requests then use.
 4. In Postman, use the **Desktop Agent** when testing against localhost.
+
+### Generated API docs
+
+The same endpoints are documented from the code itself (drf-spectacular), so they cannot drift from the views:
+
+| URL       | What it is                                                                      |
+| --------- | ------------------------------------------------------------------------------- |
+| `/docs`   | Swagger UI: browse and try every endpoint.                                      |
+| `/redoc`  | ReDoc: a read-only reference view.                                              |
+| `/schema` | The raw OpenAPI 3 file. Import this link into Postman to generate a collection. |
+
+## 11. Use of AI
+
+AI tools were used during this project. What they were used for, where their output was wrong, and which decisions were made without them is documented separately in [docs/AI_REFLECTION.md](docs/AI_REFLECTION.md).

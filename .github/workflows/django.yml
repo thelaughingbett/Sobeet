@@ -40,3 +40,6 @@ jobs:
 
       - name: Run tests
         run: python manage.py test base api --verbosity 2
+
+      - name: Validate API docs
+        run: python manage.py spectacular --validate --fail-on-warn --file /dev/null
