@@ -97,6 +97,8 @@ APT007 = _define("APT007", "Slot falls in the lunch break", 422)
 APT008 = _define("APT008", "Clinic is closed on this date", 422)
 APT009 = _define("APT009", "Doctor is on time off", 422)
 APT010 = _define("APT010", "Invalid or missing start time", 400)
+APT015 = _define("APT015", "You already hold this slot", 409)
+APT016 = _define("APT016", "You have another appointment at this time", 409)
 
 # ── Appointments: cancel & reschedule ─────────────────────────────
 APT011 = _define("APT011", "Appointment already cancelled", 409)
