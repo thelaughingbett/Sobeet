@@ -5,11 +5,11 @@
 > - Public URL: [https://sobeet.onrender.com](https://sobeet.onrender.com)
 > - API docs (Swagger UI): [https://sobeet.onrender.com/docs](https://sobeet.onrender.com/docs)
 > - Postman collection: [Clinic Appointment Booking System](https://www.postman.com/security-meteorologist-10250542-s-team/workspace/clinic-appointment-booking-system)
-> - How to go through the system (doctors, availability, booking): [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md)
-> - Run it locally: [section 9](#9-run-locally)
 > - Database schema: [docs/er-diagram.md](docs/er-diagram.md)
 > - Error codes: [docs/ERROR_CODES.md](docs/ERROR_CODES.md)
 > - AI reflection: [docs/AI_REFLECTION.md](docs/AI_REFLECTION.md)
+
+> **Note on the first load:** the app is hosted on Render's free tier, which puts a service to sleep after about 15 minutes without traffic. The first request after that wakes it up and can take **30 to 60 seconds** (occasionally longer). Every request after that is fast. If the first request times out, wait a moment and retry.
 
 ## 1. Problem
 
@@ -31,17 +31,17 @@ A small clinic with 5 doctors needs online appointment booking.
 
 ## 3. Data model
 
-| Model             | Purpose                                                                                                                                                                             |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Account**       | Login identity (email, password hash, role) and the personal details shared by every kind of user (name, phone). Doctor and Patient are profiles attached to an Account.            |
-| **Clinic**        | The location. Holds the timezone, slot length, and the lunch window. Present from day one so adding branches later does not need a rewrite. Every doctor belongs to one (see 6.12). |
-| **ClinicHoliday** | Clinic-wide closed days. `is_yearly` holidays match on month and day only, so fixed-date holidays do not need re-entering each year.                                                |
-| **Doctor**        | Clinical profile: title, speciality, clinic, and lifecycle status.                                                                                                                  |
-| **WorkingHours**  | One row per doctor per working weekday (for example Monday 09:00-17:00). Weekday numbering starts at Sunday = 1.                                                                    |
-| **TimeOff**       | A per-doctor absence with a start and end timestamp (leave, sick, conference). Supports multiple future absences and partial days.                                                  |
-| **Patient**       | Patient profile attached to an Account.                                                                                                                                             |
-| **Appointment**   | A claim on a doctor's time. The only table that consumes slots.                                                                                                                     |
-| **Chart**         | Medical record anchor. Not part of the booking flow (see section 8).                                                                                                                |
+| Model             | Purpose                                                                                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Account**       | Login identity (email, password hash, role) and the personal details shared by every kind of user (name, phone). Doctor and Patient are profiles attached to an Account. |
+| **Clinic**        | The location. Holds the timezone, slot length, and the lunch window. Present from day one so adding branches later does not need a rewrite.                              |
+| **ClinicHoliday** | Clinic-wide closed days. `is_yearly` holidays match on month and day only, so fixed-date holidays do not need re-entering each year.                                     |
+| **Doctor**        | Clinical profile: title, speciality, clinic, and lifecycle status.                                                                                                       |
+| **WorkingHours**  | One row per doctor per working weekday (for example Monday 09:00-17:00). Weekday numbering starts at Sunday = 1.                                                         |
+| **TimeOff**       | A per-doctor absence with a start and end timestamp (leave, sick, conference). Supports multiple future absences and partial days.                                       |
+| **Patient**       | Patient profile attached to an Account.                                                                                                                                  |
+| **Appointment**   | A claim on a doctor's time. The only table that consumes slots.                                                                                                          |
+| **Chart**         | Medical record anchor. Not part of the booking flow (see section 8).                                                                                                     |
 
 [🗃️ Database Schema](docs/er-diagram.md)
 
@@ -71,19 +71,14 @@ Availability and Booking are separate because reads (browsing slots) vastly outn
 
 ### Main API calls
 
-A step-by-step tour of these calls, with example requests and responses, is in [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).
-
-| Endpoint                                                       | Behaviour                                                                                                                                                                                                   |
-| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /appointments`                                           | Books a slot. Body: `patient_id`, `doctor_id`, `start_at`. The end time is derived from `Clinic.slot_minutes`.                                                                                              |
-| `GET /doctors/{id}/availability?date=YYYY-MM-DD`               | Returns all free 30-minute slots for the doctor on that date.                                                                                                                                               |
-| `GET /doctors?clinic_id=&status=`                              | Lists doctors with their working hours, optionally filtered by clinic and status.                                                                                                                           |
-| `POST /doctors`                                                | Creates a doctor (account, profile, and optional working hours). Body: `email`, `full_name`, `clinic_id` (required, see 6.12), and optionally `phone_no`, `title`, `speciality`, `status`, `working_hours`. |
-| `POST /patients`, `GET /patients`                              | Creates a patient (account and profile), or lists patients. Body for create: `email`, `full_name`, and optionally `phone_no`.                                                                               |
-| `PATCH /appointments/{id}/cancel`                              | Body: `reason` (required). Sets state to `cancelled`, stores `cancel_reason` and `cancelled_at`. The slot becomes bookable again.                                                                           |
-| `PATCH /appointments/{id}/reschedule`                          | Body: `start_at` (the new slot). Validates the new slot exactly like a fresh booking. Marks the old appointment `rescheduled` and creates a new `booked` one pointing back to it.                           |
-| `GET /patients/{id}/appointments` (bonus)                      | Returns the patient's upcoming `booked` appointments, sorted by `start_at` ascending.                                                                                                                       |
-| `POST /doctors/{id}/time-off` (admin, beyond the required set) | Creates time off and auto-reschedules affected appointments (see 6.3).                                                                                                                                      |
+| Endpoint                                                       | Behaviour                                                                                                                                                                         |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /appointments`                                           | Books a slot. Body: `patient_id`, `doctor_id`, `start_at`. The end time is derived from `Clinic.slot_minutes`.                                                                    |
+| `GET /doctors/{id}/availability?date=YYYY-MM-DD`               | Returns all free 30-minute slots for the doctor on that date.                                                                                                                     |
+| `PATCH /appointments/{id}/cancel`                              | Body: `reason` (required). Sets state to `cancelled`, stores `cancel_reason` and `cancelled_at`. The slot becomes bookable again.                                                 |
+| `PATCH /appointments/{id}/reschedule`                          | Body: `start_at` (the new slot). Validates the new slot exactly like a fresh booking. Marks the old appointment `rescheduled` and creates a new `booked` one pointing back to it. |
+| `GET /patients/{id}/appointments` (bonus)                      | Returns the patient's upcoming `booked` appointments, sorted by `start_at` ascending.                                                                                             |
+| `POST /doctors/{id}/time-off` (admin, beyond the required set) | Creates time off and auto-reschedules affected appointments (see 6.3).                                                                                                            |
 
 #### Validation rules for booking and rescheduling
 
@@ -179,16 +174,6 @@ Bookings must be at least `MIN_LEAD_MINUTES` minutes ahead (61 by default, see s
 
 Business failures are raised as `ClinicError` subclasses defined in `base/utils/errors.py`, each with a stable code, a fixed message, and an HTTP status. Views catch `ClinicError` and return one response shape. Codes are never reused, so support and the frontend can rely on them. `CATALOG` allows a test to check that the documentation stays in sync with the code.
 
-### 6.12 Every doctor belongs to a clinic, so creating one needs a clinic id
-
-A `Doctor` has a required link to a `Clinic`, because the clinic supplies the timezone, slot length, lunch window, and holidays that decide when that doctor can be booked (sections 5 and 6.4). A doctor with no clinic would have no rules to be scheduled by. So `POST /doctors` takes a required `clinic_id`. An unknown or malformed id returns `CLN001` (404) before any account is created, so a failed request leaves nothing behind.
-
-v1 has no endpoint for managing clinics (a clinic is set up once by an administrator), so the id is passed in rather than looked up. This is also the seam for multi-branch growth: a second branch is a second `Clinic` row, and its doctors are created with that clinic's id.
-
-> **Test clinic id:** `2b21687de8e644a8a8a6a3ab29128635`
->
-> On the public deployment, this is the clinic id to use whenever you create a doctor. Other ids are rejected with `CLN001`. The API returns ids with hyphens (`2b21687d-e8e6-44a8-a8a6-a3ab29128635`); both forms are accepted in requests. To get the same clinic in a local database, see [section 9](#9-run-locally).
-
 ## 7. Trade-offs considered
 
 | Decision                                         | Alternative                         | Why we chose this                                                                                                                                |
@@ -201,7 +186,6 @@ v1 has no endpoint for managing clinics (a clinic is set up once by an administr
 | Auto-reschedule on time off                      | Ask the patient to accept or cancel | Much simpler: no notification dependency and no pending-response state. The cost is that patients are moved without being asked (see section 8). |
 | Exclusion constraint                             | Application-level check             | Correct under concurrency, with no locking code to maintain. Requires Postgres.                                                                  |
 | Chart kept out of booking                        | Single combined record              | Medical data needs different access control and auditing.                                                                                        |
-| Clinic id passed to `POST /doctors`              | Default to "the only clinic"        | A default would quietly break the moment a second branch exists. An explicit id costs one field and keeps doctors attached to the right rules.   |
 
 ## 8. Known limitations and future work
 
@@ -213,112 +197,13 @@ v1 has no endpoint for managing clinics (a clinic is set up once by an administr
 - **Single lunch window for everyone.** Staggered lunches would require moving lunch to per-doctor settings.
 - **Fixed slot length.** `slot_minutes` is clinic-wide. Different appointment types (for example 15 or 60 minutes) would need an `AppointmentType` model. The exclusion constraint already supports variable lengths.
 - **Cancellation details.** `cancel_reason` and `cancelled_at` are recorded. Add `cancelled_by` if you need to distinguish patient, admin, and system cancellations.
+- **Cold starts on the free host.** After about 15 idle minutes the first request takes 30 to 60 seconds. A paid always-on instance removes it. An external uptime ping can hide it, but it is not a supported fix and is not used here.
 - **No authentication on the API yet.** Endpoints accept `patient_id` in the request body. The next step is to require login and read the patient from the authenticated account.
-- **No endpoint for clinics.** Clinics are created outside the API (for example in the Django shell), and `POST /doctors` takes the clinic id. A `POST /clinics` admin endpoint is the natural next step, along with endpoints for clinic holidays and settings.
 - **Business rules to confirm:** how far ahead patients may book, and a cancellation cutoff (for example 2 hours before). A patient may not hold overlapping appointments (`APT016`).
 - **Chart.** Medical records need their own access rules and audit logging before they are built.
 - **Growth path:** multi-branch support (already scoped by `Clinic`), caching or read replicas for Availability, notifications, appointment types, and clinic-wide closures (for example, a nullable `doctor_id` on `TimeOff` meaning "everyone").
 
-## 9. Run locally
-
-This is a standard Django project. You need Python 3.12 (the version CI uses) and Git. Local runs use SQLite by default, so there is no database to install.
-
-### 1. Get the code
-
-Work from the `dev` branch. `prod` only receives merges from `dev` and is what gets deployed (see section 10).
-
-```bash
-
-git clone https://github.com/thelaughingbett/Sobeet.git
-cd Sobeet
-git checkout dev
-
-```
-
-### 2. Create and activate a virtual environment
-
-macOS and Linux:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-Windows (PowerShell):
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-```
-
-Your prompt should now start with `(.venv)`. Activate the environment again in every new terminal before running the commands below.
-
-### 3. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Create the database tables
-
-```bash
-python manage.py migrate
-```
-
-### 5. Create the test clinic
-
-Doctors cannot exist without a clinic (see 6.12), and there is no clinic endpoint, so create one in the Django shell. This creates it with the same id used in the docs and the Postman collection, so the example requests work unchanged:
-
-```bash
-python manage.py shell
-```
-
-```python
-from base.models import Clinic
-
-clinic, created = Clinic.objects.get_or_create(
-    pk="2b21687de8e644a8a8a6a3ab29128635",
-    defaults={"name": "Sobeet Test Clinic"},
-)
-print(created, clinic.pk)
-```
-
-The clinic starts with the defaults from the model: timezone `Africa/Nairobi`, 30-minute slots, and lunch from 12:30 to 13:30. Running the snippet again is safe, because `get_or_create` does nothing if the clinic already exists.
-
-### 6. (Optional) Create an admin user
-
-```bash
-python manage.py createsuperuser
-```
-
-You will be asked for an email, a full name, and a password. Log in at `/admin/`.
-
-### 7. Start the server
-
-```bash
-python manage.py runserver
-```
-
-The API is now at `http://127.0.0.1:8000`, with Swagger UI at `/docs`, ReDoc at `/redoc`, and the raw OpenAPI file at `/schema`.
-
-Next, follow [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md): create a doctor with the test clinic id, create a patient, check availability, and book.
-
-### Run the same checks as CI
-
-```bash
-python manage.py check
-python manage.py makemigrations --check --dry-run
-python manage.py test base api
-python manage.py spectacular --validate --fail-on-warn
-```
-
-If all four pass, the pull request checks described in section 10 will pass too.
-
-### Using Postman locally
-
-Set the `base_url` variable to `http://localhost:8000` and use the Postman **Desktop Agent**, which browser Postman needs in order to reach localhost (see section 11).
-
-## 10. Deployment and CI/CD
+## 9. Deployment and CI/CD
 
 | Item                       | Details                                                                                                                                    |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -328,6 +213,10 @@ Set the `base_url` variable to `http://localhost:8000` and use the Postman **Des
 | **Hosting**                | Render (web service running `gunicorn Sobeet.wsgi:application`)                                                                            |
 | **Build command**          | `./build.sh`                                                                                                                               |
 | **CI workflow**            | `.github/workflows/django.yml` ("Django CI")                                                                                               |
+
+### Cold starts
+
+The service runs on Render's free instance type, which spins down after about 15 minutes with no incoming requests and starts again on the next one. That first request typically takes 30 to 60 seconds while the container starts, the app loads and the database connects. It is expected behaviour on this tier, not an error, and later requests respond normally. Moving to a paid instance keeps the service running all the time.
 
 ### Pipeline
 
@@ -344,7 +233,7 @@ The GitHub Actions workflow runs on every pull request into `dev` or `prod`, and
 - A pull request from `dev` into `prod` cannot be merged until the `test` check passes, so a failing test blocks the merge. This relies on branch protection on `prod` requiring that check.
 - After the merge, Render deploys `prod`. Render's default auto-deploy starts on every push to `prod` without waiting for GitHub Actions, so the protection on `prod` is what guarantees only tested code is deployed. Render's "After CI checks pass" auto-deploy option adds a second guard.
 
-## 11. API collection (Postman)
+## 10. API collection (Postman)
 
 All endpoints are documented and runnable in the Postman workspace:
 
@@ -356,6 +245,7 @@ To use it:
 2. Set the `base_url` variable to the deployed URL (or `http://localhost:8000` for local runs).
 3. Run the list request first. A post-response script picks a random `booked` appointment and stores its ID in the `APPOINTMENT_ID` variable, which the cancel and reschedule requests then use.
 4. In Postman, use the **Desktop Agent** when testing against localhost.
+5. If the deployed service has been idle, the first request wakes it and can take up to a minute (see "Cold starts" in section 9). If it times out, send it again, or raise the request timeout in Postman's settings.
 
 ### Generated API docs
 
@@ -367,6 +257,6 @@ The same endpoints are documented from the code itself (drf-spectacular), so the
 | `/redoc`  | ReDoc: a read-only reference view.                                              |
 | `/schema` | The raw OpenAPI 3 file. Import this link into Postman to generate a collection. |
 
-## 12. Use of AI
+## 11. Use of AI
 
 AI tools were used during this project. What they were used for, where their output was wrong, and which decisions were made without them is documented separately in [docs/AI_REFLECTION.md](docs/AI_REFLECTION.md).
